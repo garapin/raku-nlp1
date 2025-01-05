@@ -1,0 +1,76 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: humanizeindo
+  labels:
+    app: humanizeindo
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: humanizeindo
+  template:
+    metadata:
+      labels:
+        app: humanizeindo
+    spec:
+      volumes:
+      - name: app-source
+        emptyDir: {}
+      initContainers:
+      - name: git-sync
+        image: k8s.gcr.io/git-sync/git-sync:v3.6.2
+        volumeMounts:
+        - name: app-source
+          mountPath: /src
+        env:
+        - name: GIT_SYNC_REPO
+          value: "https://github.com/garapin/raku-nlp1.git"
+        - name: GIT_SYNC_BRANCH
+          value: "master"
+        - name: GIT_SYNC_ROOT
+          value: "/src"
+        - name: GIT_SYNC_ONE_TIME
+          value: "true"
+      containers:
+      - name: humanizeindo
+        image: python:3.8-slim
+        workingDir: /src
+        command: ["/bin/sh", "-c"]
+        args:
+        - |
+          apt-get update && apt-get install -y git &&
+          cd /src &&
+          ls -la &&
+          pip install -r requirements.txt &&
+          uvicorn humanizeindo:app --host 0.0.0.0 --port 8000
+        volumeMounts:
+        - name: app-source
+          mountPath: /src
+        ports:
+        - containerPort: 8000
+        resources:
+          requests:
+            memory: "2Gi"
+            cpu: "500m"
+          limits:
+            memory: "4Gi"
+            cpu: "1000m"
+        env:
+        - name: MONGO_URI
+          valueFrom:
+            secretKeyRef:
+              name: mongodb-secret
+              key: connection-string
+        readinessProbe:
+          httpGet:
+            path: /humanize
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /humanize
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 10 
